@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.0.0 (must have a CHANGELOG.md entry)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Get MelonLoader 0.5.7 references
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/LavaGang/MelonLoader/releases/download/v0.5.7/MelonLoader.x64.zip -OutFile ml.zip
+          Expand-Archive ml.zip -DestinationPath ml
+
+      - name: Build
+        shell: pwsh
+        run: dotnet build src/QuickSpray.csproj -c Release "/p:GameDir=$PWD\ml"
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then tag="v${{ inputs.version }}"; else tag="${GITHUB_REF_NAME}"; fi
+          ver="${tag#v}"
+          awk -v v="$ver" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} /^\[.*\]: / {f=0} f' CHANGELOG.md > notes.md
+          gh release create "$tag" src/bin/Release/net472/QuickSpray.dll \
+            --target "$GITHUB_SHA" --title "CMS21 Quick Spray $tag" --notes-file notes.md
